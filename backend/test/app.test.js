@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { setTimeout: delay } = require('node:timers/promises');
 const app = require('../src/app');
 const { createApp } = require('../src/app');
 
@@ -121,6 +122,76 @@ test('upload sem arquivo retorna erro 400', async (t) => {
 
   assert.strictEqual(response.status, 400);
   assert.strictEqual((await response.json()).error.code, 'FILE_REQUIRED');
+});
+
+test('upload sanitiza nomes originais com separadores de caminho', async (t) => {
+  const { baseUrl } = await startTestServer(t);
+  const response = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: createUploadBody('contents', '..\\..\\evil.txt'),
+  });
+
+  assert.strictEqual(response.status, 201);
+  const uploadedDocument = await response.json();
+  assert.strictEqual(uploadedDocument.originalName, 'evil.txt');
+});
+
+test('listagem sem documentos retorna 200 com array vazio', async (t) => {
+  const { baseUrl } = await startTestServer(t);
+  const response = await fetch(`${baseUrl}/documents`);
+
+  assert.strictEqual(response.status, 200);
+  assert.deepStrictEqual((await response.json()).documents, []);
+});
+
+test('listagem ordena do mais recente para o mais antigo', async (t) => {
+  const { baseUrl } = await startTestServer(t);
+
+  const firstUpload = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: createUploadBody('first', 'first.txt'),
+  });
+  // Garante timestamps distintos entre os uploads.
+  await delay(10);
+  const secondUpload = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: createUploadBody('second', 'second.txt'),
+  });
+
+  const firstDocument = await firstUpload.json();
+  const secondDocument = await secondUpload.json();
+  const listResponse = await fetch(`${baseUrl}/documents`);
+  const { documents } = await listResponse.json();
+
+  assert.deepStrictEqual(
+    documents.map((document) => document.id),
+    [secondDocument.id, firstDocument.id],
+  );
+});
+
+test('download devolve o conteúdo íntegro com o nome original', async (t) => {
+  const { baseUrl } = await startTestServer(t);
+  const contents = 'conteúdo binário çãé \u0000\u0001';
+  const uploadResponse = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: createUploadBody(contents, 'relatório final.txt'),
+  });
+  const uploadedDocument = await uploadResponse.json();
+
+  const downloadResponse = await fetch(
+    `${baseUrl}/documents/${uploadedDocument.id}/download`,
+  );
+
+  assert.strictEqual(downloadResponse.status, 200);
+  assert.strictEqual(await downloadResponse.text(), contents);
+  assert.match(
+    downloadResponse.headers.get('content-disposition'),
+    /attachment/,
+  );
+  assert.match(
+    downloadResponse.headers.get('content-type'),
+    /application\/octet-stream/,
+  );
 });
 
 test('upload acima do limite retorna erro 413', async (t) => {
