@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { formatFileSize } from './formatFileSize.js';
+import { MAX_FILE_SIZE } from '../config.js';
+import { formatFileSize } from '../utils/formatFileSize.js';
 
 export default function UploadComponent({ onUpload }) {
   const fileInputRef = useRef(null);
@@ -11,6 +12,17 @@ export default function UploadComponent({ onUpload }) {
 
   function selectFile(file) {
     if (!file) {
+      return;
+    }
+
+    // Valida o tamanho antes do envio para evitar descobrir o 413 só no fim.
+    if (file.size > MAX_FILE_SIZE) {
+      setSelectedFile(null);
+      setStatus('');
+      setError(`O arquivo excede o limite de ${formatFileSize(MAX_FILE_SIZE)}.`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
