@@ -5,25 +5,52 @@ const { createDocumentController } = require('./controllers/documentController')
 const { createDocumentRepository } = require('./repositories/documentRepository');
 const { createDocumentRoutes } = require('./routes/documentRoutes');
 const { createDocumentService } = require('./services/documentService');
-const { createUploadMiddleware } = require('./routes/uploadMiddleware');
+const { createUploadMiddleware } = require('./infra/uploadMiddleware');
 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const DEFAULT_MAX_DOCUMENTS_PER_OWNER = 100;
+
+function getPositiveIntegerFromEnv(name, defaultValue) {
+  const rawValue = process.env[name];
+  if (rawValue === undefined) {
+    return defaultValue;
+  }
+
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} deve ser um inteiro positivo.`);
+  }
+
+  return value;
+}
 
 function getMaxFileSize(configuredMaxFileSize) {
   if (configuredMaxFileSize !== undefined) {
     return configuredMaxFileSize;
   }
 
-  const maxFileSize = process.env.MAX_FILE_SIZE
-    ? Number(process.env.MAX_FILE_SIZE)
-    : DEFAULT_MAX_FILE_SIZE;
+  return getPositiveIntegerFromEnv('MAX_FILE_SIZE', DEFAULT_MAX_FILE_SIZE);
+}
 
-  if (!Number.isSafeInteger(maxFileSize) || maxFileSize <= 0) {
-    throw new Error('MAX_FILE_SIZE deve ser um inteiro positivo em bytes.');
+function getMaxDocumentsPerOwner(configuredMaxDocuments) {
+  if (configuredMaxDocuments !== undefined) {
+    return configuredMaxDocuments;
   }
 
-  return maxFileSize;
+  return getPositiveIntegerFromEnv(
+    'MAX_DOCUMENTS_PER_OWNER',
+    DEFAULT_MAX_DOCUMENTS_PER_OWNER,
+  );
+}
+
+function getStorageDirectory(configuredStorageDirectory) {
+  // Padrão resolvido a partir deste arquivo, independente do cwd do processo.
+  return path.resolve(
+    configuredStorageDirectory
+      || process.env.STORAGE_DIR
+      || path.resolve(__dirname, '../storage'),
+  );
 }
 
 function resolveOwner(req) {
@@ -48,32 +75,26 @@ function createErrorHandler() {
       return res.status(status).json({ error: { code, message } });
     }
 
+    // Registra o erro inesperado (e a causa original) sem expor detalhes ao cliente.
+    console.error('Erro ao processar a requisição:', error, error.cause || '');
+
     const status = error.status || 500;
     const code = error.apiCode || 'INTERNAL_SERVER_ERROR';
-    const messages = {
-      UPLOAD_FAILED: 'Não foi possível enviar o documento.',
-      DOCUMENT_LIST_FAILED: 'Não foi possível listar os documentos.',
-      DOWNLOAD_FAILED: 'Não foi possível baixar o documento.',
-      INTERNAL_SERVER_ERROR: 'Ocorreu um erro interno.',
-    };
+    const message = error.publicMessage || 'Ocorreu um erro interno.';
 
-    return res.status(status).json({
-      error: {
-        code,
-        message: messages[code] || messages.INTERNAL_SERVER_ERROR,
-      },
-    });
+    return res.status(status).json({ error: { code, message } });
   };
 }
 
 function createApp(options = {}) {
-  const storageDirectory = path.resolve(
-    options.storageDirectory || path.resolve(__dirname, '../storage'),
-  );
+  const storageDirectory = getStorageDirectory(options.storageDirectory);
   const maxFileSize = getMaxFileSize(options.maxFileSize);
+  const maxDocumentsPerOwner = getMaxDocumentsPerOwner(options.maxDocumentsPerOwner);
   const documentRepository = options.documentRepository
     || createDocumentRepository(storageDirectory);
-  const documentService = createDocumentService(documentRepository);
+  const documentService = createDocumentService(documentRepository, {
+    maxDocumentsPerOwner,
+  });
   const documentController = createDocumentController(
     documentService,
     options.resolveOwner || resolveOwner,
@@ -85,6 +106,11 @@ function createApp(options = {}) {
 
   const app = express();
   app.use(express.json());
+  // Impede que navegadores "adivinhem" o tipo do conteúdo (defesa em profundidade).
+  app.use((req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    next();
+  });
   app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
   });
