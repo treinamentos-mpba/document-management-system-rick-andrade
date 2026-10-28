@@ -121,6 +121,7 @@ O campo `mimeType` pode ser omitido quando indisponível. `storedName` não é r
 **Erros**
 
 - `400 Bad Request`, `FILE_REQUIRED`: arquivo ausente ou requisição multipart inválida.
+- `409 Conflict`, `DOCUMENT_LIMIT_REACHED`: o usuário atingiu o limite de documentos configurado.
 - `413 Payload Too Large`, `FILE_TOO_LARGE`: arquivo excede o limite configurado.
 - `500 Internal Server Error`, `UPLOAD_FAILED`: falha inesperada de gravação ou processamento, sem detalhes internos.
 
@@ -158,9 +159,10 @@ Baixa o conteúdo binário de um documento pertencente ao usuário atual.
 **Sucesso: `200 OK`**
 
 - Corpo: bytes do arquivo, sem envelope JSON.
-- `Content-Type`: tipo MIME registrado ou `application/octet-stream` quando desconhecido.
+- `Content-Type`: sempre `application/octet-stream`, para não refletir o tipo MIME informado pelo cliente (decisão de segurança; o `mimeType` registrado permanece apenas informativo nos metadados).
 - `Content-Disposition: attachment`, com o nome original codificado de forma segura.
-- `Content-Length`: tamanho do arquivo quando disponível.
+- `Content-Length`: calculado pelo servidor a partir do arquivo em disco.
+- `X-Content-Type-Options: nosniff` em todas as respostas da API.
 
 **Erros**
 
@@ -196,7 +198,9 @@ Endpoint técnico já existente no seed. Deve continuar respondendo `200 OK` com
 | `PORT` | `3000` | Porta HTTP do backend; já compatível com o seed e proxy Vite. |
 | `STORAGE_DIR` | `backend/storage` (resolvido de forma independente do diretório atual do processo) | Diretório local de gravação dos arquivos. |
 | `MAX_FILE_SIZE` | `10485760` | Limite de upload em bytes (10 MiB). |
+| `MAX_DOCUMENTS_PER_OWNER` | `100` | Quantidade máxima de documentos por proprietário; uploads além do limite retornam `409`. |
 | `DMS_DEFAULT_OWNER` | `local-user` | Proprietário fixo apenas para execução local sem autenticação. |
+| `VITE_MAX_FILE_SIZE` (frontend) | `10485760` | Limite exibido/validado no frontend antes do envio; deve acompanhar `MAX_FILE_SIZE`. |
 
 ## 8. Plano de execução
 

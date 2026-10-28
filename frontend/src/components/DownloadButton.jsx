@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { downloadDocument } from '../services/documentApi.js';
+import { triggerBrowserDownload } from '../utils/triggerBrowserDownload.js';
 
 export default function DownloadButton({ documentMetadata }) {
   const [isDownloading, setIsDownloading] = useState(false);
@@ -10,7 +11,8 @@ export default function DownloadButton({ documentMetadata }) {
     setError('');
 
     try {
-      await downloadDocument(documentMetadata);
+      const { blob, filename } = await downloadDocument(documentMetadata);
+      triggerBrowserDownload(blob, filename);
     } catch (downloadError) {
       setError(downloadError.message);
     } finally {

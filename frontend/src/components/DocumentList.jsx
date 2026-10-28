@@ -1,5 +1,5 @@
 import DownloadButton from './DownloadButton.jsx';
-import { formatFileSize } from './formatFileSize.js';
+import { formatFileSize } from '../utils/formatFileSize.js';
 
 function formatDate(uploadedAt) {
   const date = new Date(uploadedAt);

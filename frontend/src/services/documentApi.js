@@ -36,14 +36,9 @@ export async function downloadDocument(documentMetadata) {
     `${API_PREFIX}/documents/${encodeURIComponent(documentMetadata.id)}/download`,
   );
   const successfulResponse = await ensureSuccess(response);
-  const fileBlob = await successfulResponse.blob();
-  const objectUrl = window.URL.createObjectURL(fileBlob);
-  const downloadLink = window.document.createElement('a');
 
-  downloadLink.href = objectUrl;
-  downloadLink.download = documentMetadata.originalName;
-  window.document.body.appendChild(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+  return {
+    blob: await successfulResponse.blob(),
+    filename: documentMetadata.originalName,
+  };
 }

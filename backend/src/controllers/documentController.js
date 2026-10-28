@@ -3,10 +3,11 @@ function toPublicDocument(document) {
   return publicDocument;
 }
 
-function createOperationError(apiCode, cause) {
-  const error = new Error('A operação do documento falhou.', { cause });
+function createOperationError(apiCode, publicMessage, cause) {
+  const error = new Error(publicMessage, { cause });
   error.status = 500;
   error.apiCode = apiCode;
+  error.publicMessage = publicMessage;
   return error;
 }
 
@@ -29,7 +30,20 @@ function createDocumentController(documentService, resolveOwner) {
         );
         return res.status(201).json(toPublicDocument(document));
       } catch (error) {
-        return next(createOperationError('UPLOAD_FAILED', error));
+        if (error.code === 'DOCUMENT_LIMIT_REACHED') {
+          return res.status(409).json({
+            error: {
+              code: 'DOCUMENT_LIMIT_REACHED',
+              message: 'O limite de documentos do usuário foi atingido.',
+            },
+          });
+        }
+
+        return next(createOperationError(
+          'UPLOAD_FAILED',
+          'Não foi possível enviar o documento.',
+          error,
+        ));
       }
     },
 
@@ -40,7 +54,11 @@ function createDocumentController(documentService, resolveOwner) {
           documents: documents.map(toPublicDocument),
         });
       } catch (error) {
-        return next(createOperationError('DOCUMENT_LIST_FAILED', error));
+        return next(createOperationError(
+          'DOCUMENT_LIST_FAILED',
+          'Não foi possível listar os documentos.',
+          error,
+        ));
       }
     },
 
@@ -61,23 +79,28 @@ function createDocumentController(documentService, resolveOwner) {
         }
 
         const { document, filePath } = result;
+        // Content-Type e Content-Length ficam a cargo do Express (res.download),
+        // evitando refletir o mimeType controlado pelo cliente e divergências
+        // entre o metadado e o arquivo real em disco.
         return res.download(
           filePath,
           document.originalName,
-          {
-            headers: {
-              'Content-Type': document.mimeType || 'application/octet-stream',
-              'Content-Length': String(document.size),
-            },
-          },
           (error) => {
             if (error) {
-              next(createOperationError('DOWNLOAD_FAILED', error));
+              next(createOperationError(
+                'DOWNLOAD_FAILED',
+                'Não foi possível baixar o documento.',
+                error,
+              ));
             }
           },
         );
       } catch (error) {
-        return next(createOperationError('DOWNLOAD_FAILED', error));
+        return next(createOperationError(
+          'DOWNLOAD_FAILED',
+          'Não foi possível baixar o documento.',
+          error,
+        ));
       }
     },
   };
